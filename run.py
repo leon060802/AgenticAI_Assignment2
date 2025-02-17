@@ -12,7 +12,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 
-from prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_TEXT_ONLY, SYSTEM_PREVIOUS_STEP
+from prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_TEXT_ONLY, SYSTEM_PREVIOUS_STEP, ERROR_GROUNDING_AGENT_PROMPT
 from openai import OpenAI
 from utils import get_web_element_rect, encode_image, extract_information, print_message,\
     get_webarena_accessibility_tree, get_pdf_retrieval_ans_from_assistant, clip_message_and_obs, clip_message_and_obs_text_only
@@ -26,7 +26,7 @@ def setup_logger(folder_path):
         logger.removeHandler(handler)
         handler.close()
 
-    handler = logging.FileHandler(log_file_path)
+    handler = logging.FileHandler(log_file_path, encoding="utf-8")
     formatter = logging.Formatter('%(levelname)s - %(message)s')
     handler.setFormatter(formatter)
     logger.addHandler(handler)
@@ -56,7 +56,7 @@ def driver_config(args):
 
 
 def format_msg(it, init_msg, pdf_obs, warn_obs, web_img_b64, web_text, history="", prev_step_action=""):
-    previous = history + prev_step_action + "\n"
+    previous = ""#history + prev_step_action + "\n" #先暫停
     if it == 1:
         init_msg += f"{history}I've provided the tag name of each element and the text it contains (if text exists). Note that <textarea> or <input> may be textbox, but not exactly. Please focus more on the screenshot and then refer to the textual information.\n{web_text}"
         init_msg_format = {
@@ -95,7 +95,7 @@ def format_msg(it, init_msg, pdf_obs, warn_obs, web_img_b64, web_text, history="
 
 
 def format_msg_text_only(it, init_msg, pdf_obs, warn_obs, ac_tree, history="", prev_step_action=""):
-    previous = history + prev_step_action + "\n"
+    previous = ""#history + prev_step_action + "\n"
     if it == 1:
         init_msg_format = {
             'role': 'user',
@@ -318,7 +318,7 @@ def main():
             fail_obs = ""  # When error execute the action
             pdf_obs = ""  # When download PDF file
             warn_obs = ""  # Type warning
-            pattern = r'Thought:|Action:|Observation:'
+            pattern = r'Thought:|Action:|Observation:|Errors:|Explanation:'
 
             messages = [{'role': 'system', 'content': SYSTEM_PROMPT}]
             obs_prompt = "Observation: please analyze the attached screenshot and give the Thought and Action. "
@@ -333,6 +333,12 @@ def main():
             it = 0
             accumulate_prompt_token = 0
             accumulate_completion_token = 0
+
+            # Error Grounding Agent
+            activate_EGA=True
+            error_exist=False
+            EGA_explanation=""
+            bot_thought=""
             
             while it < args.max_iter:
                 logging.info(f'Error reflection iteration: {error_iter}, Iter: {it}')
@@ -352,9 +358,43 @@ def main():
                             logging.error('Driver error when obtaining accessibility tree.')
                         logging.error(e)
                         break
-
+                
                     img_path = os.path.join(task_dir, 'screenshot{}.png'.format(it))
                     driver_task.save_screenshot(img_path)
+
+                    # Error Grounding Agent
+                    if it>1 and activate_EGA:
+                        # 丟 ground agent prompt 和 screenshot
+                        EGA_messages = [{'role': 'system', 'content': ERROR_GROUNDING_AGENT_PROMPT}]
+                        EGA_img = encode_image(img_path)
+                        EGA_user_messages={
+                            'role': 'user', 
+                            'content':[
+                                {'type':'text', 'text':'Thought:'+bot_thought+'\nScreenshot:'},
+                                {
+                                    'type': 'image_url',
+                                    'image_url': {"url": f"data:image/png;base64,{EGA_img}"}
+                                }
+                            ]}
+                        EGA_messages.append(EGA_user_messages)
+                        prompt_tokens, completion_tokens, gpt_call_error, openai_response = call_gpt4v_api(args, client, EGA_messages)
+                        if gpt_call_error:
+                            break
+                        else:
+                            accumulate_prompt_token += prompt_tokens
+                            accumulate_completion_token += completion_tokens
+                            logging.info(f'Accumulate Prompt Tokens: {accumulate_prompt_token}; Accumulate Completion Tokens: {accumulate_completion_token}')
+                            logging.info('API call complete...')
+                        EGA_res = openai_response.choices[0].message.content
+                        if re.split(pattern, EGA_res)[1].strip() == 'Yes':
+                            error_exist = True
+                        elif re.split(pattern, EGA_res)[1].strip() == 'No':
+                            error_exist = False
+                        else:
+                            error_exist = False
+                            print("error_exist got unexpected result:",re.split(pattern, gpt_4v_res)[1].strip())
+                        if error_exist==True:
+                            EGA_explanation = re.split(pattern, EGA_res)[2].strip()
 
                     # accessibility tree
                     if (not args.text_only) and args.save_accessibility_tree:
@@ -367,8 +407,12 @@ def main():
                     # format msg
                     if not args.text_only:
                         curr_msg = format_msg(it, init_msg, pdf_obs, warn_obs, b64_img, web_eles_text, prev_iter_history, SYSTEM_PREVIOUS_STEP + current_history if current_history != "" else "")
+                        if error_exist == True:
+                            curr_msg['content'][0]['text']+=("\nAdditional Information: Looks like your previous thought has some problem in operation. Here is the message from Error Grounding Agent\n"+EGA_explanation)
                     else:
                         curr_msg = format_msg_text_only(it, init_msg, pdf_obs, warn_obs, ac_tree, prev_iter_history, SYSTEM_PREVIOUS_STEP + current_history if current_history != "" else "")
+                        if error_exist == True:
+                            curr_msg['content']+=("\nAdditional Information: Looks like your previous thought has some problem in operation. Here is the message from Error Grounding Agent\n"+EGA_explanation)
                     messages.append(curr_msg)
                 else:
                     curr_msg = {
@@ -385,7 +429,7 @@ def main():
 
                 # Call GPT-4v API
                 prompt_tokens, completion_tokens, gpt_call_error, openai_response = call_gpt4v_api(args, client, messages)
-
+            
                 if gpt_call_error:
                     break
                 else:
@@ -395,6 +439,7 @@ def main():
                     logging.info('API call complete...')
                 gpt_4v_res = openai_response.choices[0].message.content
                 messages.append({'role': 'assistant', 'content': gpt_4v_res})
+                # print(gpt_4v_res)
 
                 # remove the rects on the website
                 if (not args.text_only) and rects:
@@ -415,10 +460,12 @@ def main():
                 
                 # print(f"GPT-4v Response: {gpt_4v_res}\n--------")
 
-                # bot_thought = re.split(pattern, gpt_4v_res)[1].strip()
+                bot_thought = re.split(pattern, gpt_4v_res)[1].strip()
                 chosen_action = re.split(pattern, gpt_4v_res)[2].strip()
                 current_history += f"Step {it}:\n{gpt_4v_res}\n-----\n"
                 print(f"Step {it}:\n{gpt_4v_res}\n-----\n")
+                if activate_EGA:
+                    print(f"Error:{error_exist}\nExplanation:{EGA_explanation}")
                 logging.info(gpt_4v_res)
                 
                 action_key, info = extract_information(chosen_action)
@@ -518,7 +565,7 @@ def main():
 
             logging.error(f'Error reflection iteration: {error_iter}')
 
-        print_message(messages, task_dir)
+        # print_message(messages, task_dir)
         driver_task.quit()
         logging.info(f'Total cost: {accumulate_prompt_token / 1000 * 0.01 + accumulate_completion_token / 1000 * 0.03}')
 

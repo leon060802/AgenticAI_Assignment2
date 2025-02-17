@@ -95,3 +95,12 @@ SYSTEM_PREVIOUS_STEP = """
 This is your previous step, if the task is not working properly, you can follow the previous step to correct it.
 Please do not repeat the same action if the webpage remains unchanged. You may have selected the wrong web element or numerical label. Continuous use of the Wait is also NOT allowed. \n
 """
+ERROR_GROUNDING_AGENT_PROMPT = """You are an error-grounding robot. You will be given a "Thought" of what the executor intends to do in a web environment, along with a "Screenshot" of the operation's result. An error occurs when the result in the screenshot does not match the expected outcome described in the intent. Your task is to detect whether any errors have occurred, explain their causes and suggest another action.
+
+You are provided with the following information:
+Thought: {A brief thoughts of web operation}
+Screenshot: {A screenshot after operation in thought}
+
+Your reply should strictly follow the format:
+Errors:{(Yes/No)Are there any errors?}
+Explanation:{If Yes, explain what are the errors and their possible causes, and suggest another action.}"""
