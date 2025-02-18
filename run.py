@@ -7,15 +7,17 @@ import os
 import shutil
 import logging
 
+
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 
-from prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_TEXT_ONLY, SYSTEM_PREVIOUS_STEP, ERROR_GROUNDING_AGENT_PROMPT
+from prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_TEXT_ONLY, SYSTEM_PREVIOUS_STEP, ERROR_GROUNDING_AGENT_PROMPT, SYSTEM_LOOP_DETECTOR
 from openai import OpenAI
 from utils import get_web_element_rect, encode_image, extract_information, print_message,\
     get_webarena_accessibility_tree, get_pdf_retrieval_ans_from_assistant, clip_message_and_obs, clip_message_and_obs_text_only
+
 
 
 def setup_logger(folder_path):
@@ -56,7 +58,7 @@ def driver_config(args):
 
 
 def format_msg(it, init_msg, pdf_obs, warn_obs, web_img_b64, web_text, history="", prev_step_action=""):
-    previous = ""#history + prev_step_action + "\n" #先暫停
+    previous = history + prev_step_action + "\n" #先暫停
     if it == 1:
         init_msg += f"{history}I've provided the tag name of each element and the text it contains (if text exists). Note that <textarea> or <input> may be textbox, but not exactly. Please focus more on the screenshot and then refer to the textual information.\n{web_text}"
         init_msg_format = {
@@ -95,7 +97,7 @@ def format_msg(it, init_msg, pdf_obs, warn_obs, web_img_b64, web_text, history="
 
 
 def format_msg_text_only(it, init_msg, pdf_obs, warn_obs, ac_tree, history="", prev_step_action=""):
-    previous = ""#history + prev_step_action + "\n"
+    previous = history + prev_step_action + "\n"
     if it == 1:
         init_msg_format = {
             'role': 'user',
@@ -237,6 +239,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--test_file', type=str, default='data/test.json')
     parser.add_argument('--max_iter', type=int, default=5)
+    parser.add_argument('--trajectory', action='store_true')
     parser.add_argument('--error_max_reflection_iter', type=int, default=1, help='Number of reflection restarts allowed when exceeding max_iter')
     
     parser.add_argument("--api_key", default="key", type=str, help="YOUR_OPENAI_API_KEY")
@@ -260,8 +263,10 @@ def main():
 
     # OpenAI client
     client = OpenAI(api_key=args.api_key)
+    import undetected_chromedriver as uc
     options = driver_config(args)
-
+    options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36')
+    options.add_argument("disable-blink-features=AutomationControlled")
     # Save Result file
     current_time = time.strftime("%Y%m%d_%H_%M_%S", time.localtime())
     result_dir = os.path.join(args.output_dir, current_time)
@@ -293,7 +298,12 @@ def main():
         # 失敗後重來的部分
         for error_iter in range(args.error_max_reflection_iter):
             if missionCompleted: break
-            prev_iter_history = f"This is the previous iter entire error steps, do the reflection:\n{current_history}\n Avoid making the same mistake again or reference the correct steps. \n\n" if current_history != "" else ""
+            
+            if args.trajectory:
+                prev_iter_history = f"This is the previous iter entire error steps:\n{current_history}\n" if current_history else ""
+            else:
+                prev_iter_history = ""
+            
             current_history = "" 
 
             # About window size, 765 tokens
@@ -340,6 +350,9 @@ def main():
             EGA_explanation=""
             bot_thought=""
             
+            print(f"傳入歷史紀錄: {args.trajectory}")
+            print(f"EGA: {activate_EGA}")
+            
             while it < args.max_iter:
                 logging.info(f'Error reflection iteration: {error_iter}, Iter: {it}')
                 it += 1
@@ -361,6 +374,9 @@ def main():
                 
                     img_path = os.path.join(task_dir, 'screenshot{}.png'.format(it))
                     driver_task.save_screenshot(img_path)
+                    
+                    # encode image
+                    b64_img = encode_image(img_path)
 
                     # Error Grounding Agent
                     if it>1 and activate_EGA:
@@ -395,14 +411,15 @@ def main():
                             print("error_exist got unexpected result:",re.split(pattern, gpt_4v_res)[1].strip())
                         if error_exist==True:
                             EGA_explanation = re.split(pattern, EGA_res)[2].strip()
+                            
+                    # In the Error Loop 
+
+                        
 
                     # accessibility tree
                     if (not args.text_only) and args.save_accessibility_tree:
                         accessibility_tree_path = os.path.join(task_dir, 'accessibility_tree{}'.format(it))
                         get_webarena_accessibility_tree(driver_task, accessibility_tree_path)
-
-                    # encode image
-                    b64_img = encode_image(img_path)
 
                     # format msg
                     if not args.text_only:
@@ -462,12 +479,18 @@ def main():
 
                 bot_thought = re.split(pattern, gpt_4v_res)[1].strip()
                 chosen_action = re.split(pattern, gpt_4v_res)[2].strip()
-                current_history += f"Step {it}:\n{gpt_4v_res}\n-----\n"
-                print(f"Step {it}:\n{gpt_4v_res}\n-----\n")
-                if activate_EGA:
-                    print(f"Error:{error_exist}\nExplanation:{EGA_explanation}")
-                logging.info(gpt_4v_res)
                 
+                trajectory_info = f"Thought {bot_thought}\nAction {chosen_action}"
+                error_info = f"Error: {error_exist}\nExplanation: {EGA_explanation}"
+                    
+                if args.trajectory:
+                    current_history += trajectory_info
+                    if activate_EGA:
+                        current_history += error_info
+                    
+                print(f"Step {it}:\n{error_info}\n{trajectory_info}\n----")
+                    
+                # logging.info(gpt_4v_res)
                 action_key, info = extract_information(chosen_action)
 
                 fail_obs = ""
