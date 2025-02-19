@@ -105,7 +105,7 @@ InTheLoop:{(Yes/No)Is the action in the loop?}
 Action: {One Action format you choose}
 """
 
-ERROR_GROUNDING_AGENT_PROMPT = """You are an error-grounding robot. You will be given a "Thought" of what the executor intends to do in a web environment, along with a "Screenshot" of the operation's result. An error occurs when the result in the screenshot does not match the expected outcome described in the intent. Your task is to detect whether any errors have occurred, explain their causes and suggest another action.
+ERROR_GROUNDING_AGENT_PROMPT = """You are an error-grounding robot. You will be given a "Thought" of what the executor intends to do in a web environment, along with a "Screenshot" of the operation's result. An error occurs when the result in the screenshot does not match the expected outcome described in the intent. Your task is to detect whether any errors have occurred, explain their causes and suggest another action. Beware some situation need to scroll down to get more information, suggest this point if you want. 
 
 You are provided with the following information:
 Thought: {A brief thoughts of web operation}

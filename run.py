@@ -37,6 +37,7 @@ def setup_logger(folder_path):
 
 def driver_config(args):
     options = webdriver.ChromeOptions()
+    options.add_argument("disable-blink-features=AutomationControlled")
 
     if args.save_accessibility_tree:
         args.force_device_scale = True
@@ -408,7 +409,7 @@ def main():
                             error_exist = False
                         else:
                             error_exist = False
-                            print("error_exist got unexpected result:",re.split(pattern, gpt_4v_res)[1].strip())
+                            print("error_exist got unexpected result:",EGA_res)
                         if error_exist==True:
                             EGA_explanation = re.split(pattern, EGA_res)[2].strip()
                             
