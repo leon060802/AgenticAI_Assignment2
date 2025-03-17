@@ -91,18 +91,8 @@ Task Goal: {The task provided by user}
 """
 
 SYSTEM_PREVIOUS_STEP = """
-This is your previous step, if the task is not working properly, you can follow the previous step to correct it.
+If the task isn't working as expected, review all previous steps to identify any errors and make necessary corrections.
 Please do not repeat the same action if the webpage remains unchanged. You may have selected the wrong web element or numerical label. Try to use Scroll to find the different information. \n
-"""
-
-SYSTEM_LOOP_DETECTOR = """
-This is your previous step, if the task is not working properly, think about refining your action.
-Please do not repeat the same action if the webpage remains unchanged. You may have selected the wrong web element or numerical label.
-Check is the action is in the loop or not, and try to use different action to solve the task.
-
-Your reply should strictly follow the format:
-InTheLoop:{(Yes/No)Is the action in the loop?}
-Action: {One Action format you choose}
 """
 
 ERROR_GROUNDING_AGENT_PROMPT = """You are an error-grounding robot. You will be given a "Thought" of what the executor intends to do in a web environment, along with a "Screenshot" of the operation's result. An error occurs when the result in the screenshot does not match the expected outcome described in the intent. Your task is to detect whether any errors have occurred, explain their causes and suggest another action. Beware some situation need to scroll down to get more information, suggest this point if you want. 

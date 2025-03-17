@@ -13,12 +13,10 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 
-from prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_TEXT_ONLY, SYSTEM_PREVIOUS_STEP, ERROR_GROUNDING_AGENT_PROMPT, SYSTEM_LOOP_DETECTOR
+from prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_TEXT_ONLY, SYSTEM_PREVIOUS_STEP, ERROR_GROUNDING_AGENT_PROMPT
 from openai import OpenAI
 from utils import get_web_element_rect, encode_image, extract_information, print_message,\
     get_webarena_accessibility_tree, get_pdf_retrieval_ans_from_assistant, clip_message_and_obs, clip_message_and_obs_text_only
-
-
 
 def setup_logger(folder_path):
     log_file_path = os.path.join(folder_path, 'agent.log')
@@ -58,25 +56,26 @@ def driver_config(args):
     return options
 
 
-def format_msg(it, init_msg, pdf_obs, warn_obs, web_img_b64, web_text, history="", prev_step_action=""):
-    previous = history + prev_step_action + "\n" #先暫停
+def format_msg(it, init_msg, pdf_obs, warn_obs, web_img_b64, web_text, prev_step_action=""):
     if it == 1:
-        init_msg += f"{history}I've provided the tag name of each element and the text it contains (if text exists). Note that <textarea> or <input> may be textbox, but not exactly. Please focus more on the screenshot and then refer to the textual information.\n{web_text}"
+        init_msg += f"{prev_step_action}\nI've provided the tag name of each element and the text it contains (if text exists). Note that <textarea> or <input> may be textbox, but not exactly. Please focus more on the screenshot and then refer to the textual information.\n{web_text}"
         init_msg_format = {
             'role': 'user',
             'content': [
                 {'type': 'text', 'text': init_msg},
             ]
         }
-        init_msg_format['content'].append({"type": "image_url",
-                                           "image_url": {"url": f"data:image/png;base64,{web_img_b64}"}})
+        init_msg_format['content'].append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{web_img_b64}"}
+        })
         return init_msg_format
     else:
         if not pdf_obs:
             curr_msg = {
                 'role': 'user',
                 'content': [
-                    {'type': 'text', 'text': f"{previous}Observation:{warn_obs} please analyze the attached screenshot and give the Thought and Action. I've provided the tag name of each element and the text it contains (if text exists). Note that <textarea> or <input> may be textbox, but not exactly. Please focus more on the screenshot and then refer to the textual information.\n{web_text}"},
+                    {'type': 'text', 'text': f"{prev_step_action}\nObservation:{warn_obs} please analyze the attached screenshot and give the Thought and Action. I've provided the tag name of each element and the text it contains (if text exists). Note that <textarea> or <input> may be textbox, but not exactly. Please focus more on the screenshot and then refer to the textual information.\n{web_text}"},
                     {
                         'type': 'image_url',
                         'image_url': {"url": f"data:image/png;base64,{web_img_b64}"}
@@ -87,7 +86,7 @@ def format_msg(it, init_msg, pdf_obs, warn_obs, web_img_b64, web_text, history="
             curr_msg = {
                 'role': 'user',
                 'content': [
-                    {'type': 'text', 'text': f"{previous}Observation: {pdf_obs} Please analyze the response given by Assistant, then consider whether to continue iterating or not. The screenshot of the current page is also attached, give the Thought and Action. I've provided the tag name of each element and the text it contains (if text exists). Note that <textarea> or <input> may be textbox, but not exactly. Please focus more on the screenshot and then refer to the textual information.\n{web_text}"},
+                    {'type': 'text', 'text': f"{prev_step_action}\nObservation: {pdf_obs} Please analyze the response given by Assistant, then consider whether to continue iterating or not. The screenshot of the current page is also attached, give the Thought and Action. I've provided the tag name of each element and the text it contains (if text exists). Note that <textarea> or <input> may be textbox, but not exactly. Please focus more on the screenshot and then refer to the textual information.\n{web_text}"},
                     {
                         'type': 'image_url',
                         'image_url': {"url": f"data:image/png;base64,{web_img_b64}"}
@@ -97,24 +96,23 @@ def format_msg(it, init_msg, pdf_obs, warn_obs, web_img_b64, web_text, history="
         return curr_msg
 
 
-def format_msg_text_only(it, init_msg, pdf_obs, warn_obs, ac_tree, history="", prev_step_action=""):
-    previous = history + prev_step_action + "\n"
+def format_msg_text_only(it, init_msg, pdf_obs, warn_obs, ac_tree, prev_step_action=""):
     if it == 1:
         init_msg_format = {
             'role': 'user',
-            'content': history + '\n' + init_msg + '\n' + ac_tree
+            'content': init_msg + '\n' + ac_tree
         }
         return init_msg_format
     else:
         if not pdf_obs:
             curr_msg = {
                 'role': 'user',
-                'content': f"{previous}Observation:{warn_obs} please analyze the accessibility tree and give the Thought and Action.\n{ac_tree}"
+                'content': f"{prev_step_action}\nObservation:{warn_obs} please analyze the accessibility tree and give the Thought and Action.\n{ac_tree}"
             }
         else:
             curr_msg = {
                 'role': 'user',
-                'content': f"{previous}Observation: {pdf_obs} Please analyze the response given by Assistant, then consider whether to continue iterating or not. The accessibility tree of the current page is also given, give the Thought and Action.\n{ac_tree}"
+                'content': f"{prev_step_action}\nObservation: {pdf_obs} Please analyze the response given by Assistant, then consider whether to continue iterating or not. The accessibility tree of the current page is also given, give the Thought and Action.\n{ac_tree}"
             }
         return curr_msg
 
@@ -287,307 +285,290 @@ def main():
         setup_logger(task_dir)
         logging.info(f'########## TASK{task["id"]} ##########')
 
-        # 初始化視窗（視窗太小我有的畫面看不到，所以我多加入 --start_maximized 這個參數）
+        # Initialize the window (The window was too small, and I couldn't see some parts of the screen, so I added the --start_maximized parameter).
         driver_task = webdriver.Chrome(options=options)
         if args.start_maximized: driver_task.maximize_window()
         else: driver_task.set_window_size(args.window_width, args.window_height)  # larger height may contain more web information
         
-        missionCompleted = False # 如果任務成功也不用再重來
-        prev_iter_history = ""  # 紀錄之前完整的步驟
-        current_history = ""    # 紀錄當前 iter 的步驟
+
+        # About window size, 765 tokens
+        # You can resize to height = 512 by yourself (255 tokens, Maybe bad performance)
+        driver_task.get(task['web'])
+        try:
+            driver_task.find_element(By.TAG_NAME, 'body').click()
+        except:
+            pass
+        # sometimes enter SPACE, the page will sroll down
+        driver_task.execute_script("""window.onkeydown = function(e) {if(e.keyCode == 32 && e.target.type != 'text' && e.target.type != 'textarea') {e.preventDefault();}};""")
+        time.sleep(5)
+
+        # We only deal with PDF file
+        for filename in os.listdir(args.download_dir):
+            file_path = os.path.join(args.download_dir, filename)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+
+        download_files = []  # sorted(os.listdir(args.download_dir))
+
+        fail_obs = ""  # When error execute the action
+        pdf_obs = ""  # When download PDF file
+        warn_obs = ""  # Type warning
+        pattern = r'Thought:|Action:|Observation:|Errors:|Explanation:'
+
+        messages = [{'role': 'system', 'content': SYSTEM_PROMPT}]
+        obs_prompt = "Observation: please analyze the attached screenshot and give the Thought and Action. "
+        if args.text_only:
+            messages = [{'role': 'system', 'content': SYSTEM_PROMPT_TEXT_ONLY}]
+            obs_prompt = "Observation: please analyze the accessibility tree and give the Thought and Action."
+
+        init_msg = f"""Now given a task: {task['ques']}  Please interact with https://www.example.com and get the answer. \n"""
+        init_msg = init_msg.replace('https://www.example.com', task['web'])
+        init_msg = init_msg + obs_prompt
+
+        it = 0
+        accumulate_prompt_token = 0
+        accumulate_completion_token = 0
+
+        # Error Grounding Agent
+        activate_EGA=True
+        error_exist=False
+        EGA_explanation=""
+        bot_thought=""
         
-        # 失敗後重來的部分
-        for error_iter in range(args.error_max_reflection_iter):
-            if missionCompleted: break
-            
-            if args.trajectory:
-                prev_iter_history = f"This is the previous iter entire error steps:\n{current_history}\n" if current_history else ""
-            else:
-                prev_iter_history = ""
-            
-            current_history = "" 
-
-            # About window size, 765 tokens
-            # You can resize to height = 512 by yourself (255 tokens, Maybe bad performance)
-            driver_task.get(task['web'])
-            try:
-                driver_task.find_element(By.TAG_NAME, 'body').click()
-            except:
-                pass
-            # sometimes enter SPACE, the page will sroll down
-            driver_task.execute_script("""window.onkeydown = function(e) {if(e.keyCode == 32 && e.target.type != 'text' && e.target.type != 'textarea') {e.preventDefault();}};""")
-            time.sleep(5)
-
-            # We only deal with PDF file
-            for filename in os.listdir(args.download_dir):
-                file_path = os.path.join(args.download_dir, filename)
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
-
-            download_files = []  # sorted(os.listdir(args.download_dir))
-
-            fail_obs = ""  # When error execute the action
-            pdf_obs = ""  # When download PDF file
-            warn_obs = ""  # Type warning
-            pattern = r'Thought:|Action:|Observation:|Errors:|Explanation:'
-
-            messages = [{'role': 'system', 'content': SYSTEM_PROMPT}]
-            obs_prompt = "Observation: please analyze the attached screenshot and give the Thought and Action. "
-            if args.text_only:
-                messages = [{'role': 'system', 'content': SYSTEM_PROMPT_TEXT_ONLY}]
-                obs_prompt = "Observation: please analyze the accessibility tree and give the Thought and Action."
-
-            init_msg = f"""Now given a task: {task['ques']}  Please interact with https://www.example.com and get the answer. \n"""
-            init_msg = init_msg.replace('https://www.example.com', task['web'])
-            init_msg = init_msg + obs_prompt
-
-            it = 0
-            accumulate_prompt_token = 0
-            accumulate_completion_token = 0
-
-            # Error Grounding Agent
-            activate_EGA=True
-            error_exist=False
-            EGA_explanation=""
-            bot_thought=""
-            
-            print(f"傳入歷史紀錄: {args.trajectory}")
-            print(f"EGA: {activate_EGA}")
-            
-            while it < args.max_iter:
-                logging.info(f'Error reflection iteration: {error_iter}, Iter: {it}')
-                it += 1
-                if not fail_obs:
-                    try:
-                        if not args.text_only:
-                            rects, web_eles, web_eles_text = get_web_element_rect(driver_task, fix_color=args.fix_box_color)
-                        else:
-                            accessibility_tree_path = os.path.join(task_dir, 'accessibility_tree{}'.format(it))
-                            ac_tree, obs_info = get_webarena_accessibility_tree(driver_task, accessibility_tree_path)
-
-                    except Exception as e:
-                        if not args.text_only:
-                            logging.error('Driver error when adding set-of-mark.')
-                        else:
-                            logging.error('Driver error when obtaining accessibility tree.')
-                        logging.error(e)
-                        break
-                
-                    img_path = os.path.join(task_dir, 'screenshot{}.png'.format(it))
-                    driver_task.save_screenshot(img_path)
-                    
-                    # encode image
-                    b64_img = encode_image(img_path)
-
-                    # Error Grounding Agent
-                    if it>1 and activate_EGA:
-                        # 丟 ground agent prompt 和 screenshot
-                        EGA_messages = [{'role': 'system', 'content': ERROR_GROUNDING_AGENT_PROMPT}]
-                        EGA_img = encode_image(img_path)
-                        EGA_user_messages={
-                            'role': 'user', 
-                            'content':[
-                                {'type':'text', 'text':'Thought:'+bot_thought+'\nScreenshot:'},
-                                {
-                                    'type': 'image_url',
-                                    'image_url': {"url": f"data:image/png;base64,{EGA_img}"}
-                                }
-                            ]}
-                        EGA_messages.append(EGA_user_messages)
-                        prompt_tokens, completion_tokens, gpt_call_error, openai_response = call_gpt4v_api(args, client, EGA_messages)
-                        if gpt_call_error:
-                            break
-                        else:
-                            accumulate_prompt_token += prompt_tokens
-                            accumulate_completion_token += completion_tokens
-                            logging.info(f'Accumulate Prompt Tokens: {accumulate_prompt_token}; Accumulate Completion Tokens: {accumulate_completion_token}')
-                            logging.info('API call complete...')
-                        EGA_res = openai_response.choices[0].message.content
-                        if re.split(pattern, EGA_res)[1].strip() == 'Yes':
-                            error_exist = True
-                        elif re.split(pattern, EGA_res)[1].strip() == 'No':
-                            error_exist = False
-                        else:
-                            error_exist = False
-                            print("error_exist got unexpected result:",EGA_res)
-                        if error_exist==True:
-                            EGA_explanation = re.split(pattern, EGA_res)[2].strip()
-                            
-                    # In the Error Loop 
-
-                        
-
-                    # accessibility tree
-                    if (not args.text_only) and args.save_accessibility_tree:
-                        accessibility_tree_path = os.path.join(task_dir, 'accessibility_tree{}'.format(it))
-                        get_webarena_accessibility_tree(driver_task, accessibility_tree_path)
-
-                    # format msg
+        # Reflection: Trajectory
+        current_history = ""     # Record the steps of the current iteration.
+        
+        print(f"Trajectory: {args.trajectory}")
+        print(f"EGA: {activate_EGA}")
+        
+        while it < args.max_iter:
+            logging.info(f'Iter: {it}')
+            it += 1
+            if not fail_obs:
+                try:
                     if not args.text_only:
-                        curr_msg = format_msg(it, init_msg, pdf_obs, warn_obs, b64_img, web_eles_text, prev_iter_history, SYSTEM_PREVIOUS_STEP + current_history if current_history != "" else "")
-                        if error_exist == True:
-                            curr_msg['content'][0]['text']+=("\nAdditional Information: Looks like your previous thought has some problem in operation. Here is the message from Error Grounding Agent\n"+EGA_explanation)
+                        rects, web_eles, web_eles_text = get_web_element_rect(driver_task, fix_color=args.fix_box_color)
                     else:
-                        curr_msg = format_msg_text_only(it, init_msg, pdf_obs, warn_obs, ac_tree, prev_iter_history, SYSTEM_PREVIOUS_STEP + current_history if current_history != "" else "")
-                        if error_exist == True:
-                            curr_msg['content']+=("\nAdditional Information: Looks like your previous thought has some problem in operation. Here is the message from Error Grounding Agent\n"+EGA_explanation)
-                    messages.append(curr_msg)
-                else:
-                    curr_msg = {
-                        'role': 'user',
-                        'content': fail_obs
-                    }
-                    messages.append(curr_msg)
+                        accessibility_tree_path = os.path.join(task_dir, 'accessibility_tree{}'.format(it))
+                        ac_tree, obs_info = get_webarena_accessibility_tree(driver_task, accessibility_tree_path)
 
-                # Clip messages, too many attached images may cause confusion
-                if not args.text_only:
-                    messages = clip_message_and_obs(messages, args.max_attached_imgs)
-                else:
-                    messages = clip_message_and_obs_text_only(messages, args.max_attached_imgs)
-
-                # Call GPT-4v API
-                prompt_tokens, completion_tokens, gpt_call_error, openai_response = call_gpt4v_api(args, client, messages)
-            
-                if gpt_call_error:
-                    break
-                else:
-                    accumulate_prompt_token += prompt_tokens
-                    accumulate_completion_token += completion_tokens
-                    logging.info(f'Accumulate Prompt Tokens: {accumulate_prompt_token}; Accumulate Completion Tokens: {accumulate_completion_token}')
-                    logging.info('API call complete...')
-                gpt_4v_res = openai_response.choices[0].message.content
-                messages.append({'role': 'assistant', 'content': gpt_4v_res})
-                # print(gpt_4v_res)
-
-                # remove the rects on the website
-                if (not args.text_only) and rects:
-                    logging.info(f"Num of interactive elements: {len(rects)}")
-                    for rect_ele in rects:
-                        driver_task.execute_script("arguments[0].remove()", rect_ele)
-                    rects = []
-                    # driver_task.save_screenshot(os.path.join(task_dir, 'screenshot{}_no_box.png'.format(it)))
-
-
-                # extract action info
-                try:
-                    assert 'Thought:' in gpt_4v_res and 'Action:' in gpt_4v_res
-                except AssertionError as e:
+                except Exception as e:
+                    if not args.text_only:
+                        logging.error('Driver error when adding set-of-mark.')
+                    else:
+                        logging.error('Driver error when obtaining accessibility tree.')
                     logging.error(e)
-                    fail_obs = "Format ERROR: Both 'Thought' and 'Action' should be included in your reply."
-                    continue
+                    break
+            
+                img_path = os.path.join(task_dir, 'screenshot{}.png'.format(it))
+                driver_task.save_screenshot(img_path)
                 
-                # print(f"GPT-4v Response: {gpt_4v_res}\n--------")
+                # encode image
+                b64_img = encode_image(img_path)
 
-                bot_thought = re.split(pattern, gpt_4v_res)[1].strip()
-                chosen_action = re.split(pattern, gpt_4v_res)[2].strip()
+                # Error Grounding Agent
+                if it>1 and activate_EGA:
+                    # 丟 ground agent prompt 和 screenshot
+                    EGA_messages = [{'role': 'system', 'content': ERROR_GROUNDING_AGENT_PROMPT}]
+                    EGA_img = encode_image(img_path)
+                    EGA_user_messages={
+                        'role': 'user', 
+                        'content':[
+                            {'type':'text', 'text':'Thought:'+bot_thought+'\nScreenshot:'},
+                            {
+                                'type': 'image_url',
+                                'image_url': {"url": f"data:image/png;base64,{EGA_img}"}
+                            }
+                        ]}
+                    EGA_messages.append(EGA_user_messages)
+                    prompt_tokens, completion_tokens, gpt_call_error, openai_response = call_gpt4v_api(args, client, EGA_messages)
+                    if gpt_call_error:
+                        break
+                    else:
+                        accumulate_prompt_token += prompt_tokens
+                        accumulate_completion_token += completion_tokens
+                        logging.info(f'Accumulate Prompt Tokens: {accumulate_prompt_token}; Accumulate Completion Tokens: {accumulate_completion_token}')
+                        logging.info('API call complete...')
+                    EGA_res = openai_response.choices[0].message.content
+                    if re.split(pattern, EGA_res)[1].strip() == 'Yes':
+                        error_exist = True
+                    elif re.split(pattern, EGA_res)[1].strip() == 'No':
+                        error_exist = False
+                    else:
+                        error_exist = False
+                        print("error_exist got unexpected result:",EGA_res)
+                    if error_exist==True:
+                        EGA_explanation = re.split(pattern, EGA_res)[2].strip()
+                        
+                # accessibility tree
+                if (not args.text_only) and args.save_accessibility_tree:
+                    accessibility_tree_path = os.path.join(task_dir, 'accessibility_tree{}'.format(it))
+                    get_webarena_accessibility_tree(driver_task, accessibility_tree_path)
+
+                # format msg
+                if not args.text_only:
+                    curr_msg = format_msg(it, init_msg, pdf_obs, warn_obs, b64_img, web_eles_text, SYSTEM_PREVIOUS_STEP + current_history)
+                    if error_exist == True:
+                        curr_msg['content'][0]['text']+=("\nAdditional Information: Looks like your previous thought has some problem in operation. Here is the message from Error Grounding Agent\n"+EGA_explanation)
+                else:
+                    curr_msg = format_msg_text_only(it, init_msg, pdf_obs, warn_obs, ac_tree, SYSTEM_PREVIOUS_STEP + current_history)
+                    if error_exist == True:
+                        curr_msg['content']+=("\nAdditional Information: Looks like your previous thought has some problem in operation. Here is the message from Error Grounding Agent\n"+EGA_explanation)
+                messages.append(curr_msg)
+            else:
+                curr_msg = {
+                    'role': 'user',
+                    'content': fail_obs
+                }
+                messages.append(curr_msg)
+
+            # Clip messages, too many attached images may cause confusion
+            if not args.text_only:
+                messages = clip_message_and_obs(messages, args.max_attached_imgs)
+            else:
+                messages = clip_message_and_obs_text_only(messages, args.max_attached_imgs)
+
+            # Call GPT-4v API
+            prompt_tokens, completion_tokens, gpt_call_error, openai_response = call_gpt4v_api(args, client, messages)
+        
+            if gpt_call_error:
+                break
+            else:
+                accumulate_prompt_token += prompt_tokens
+                accumulate_completion_token += completion_tokens
+                logging.info(f'Accumulate Prompt Tokens: {accumulate_prompt_token}; Accumulate Completion Tokens: {accumulate_completion_token}')
+                logging.info('API call complete...')
+            gpt_4v_res = openai_response.choices[0].message.content
+            messages.append({'role': 'assistant', 'content': gpt_4v_res})
+            # print(gpt_4v_res)
+
+            # remove the rects on the website
+            if (not args.text_only) and rects:
+                logging.info(f"Num of interactive elements: {len(rects)}")
+                for rect_ele in rects:
+                    driver_task.execute_script("arguments[0].remove()", rect_ele)
+                rects = []
+                # driver_task.save_screenshot(os.path.join(task_dir, 'screenshot{}_no_box.png'.format(it)))
+
+
+            # extract action info
+            try:
+                assert 'Thought:' in gpt_4v_res and 'Action:' in gpt_4v_res
+            except AssertionError as e:
+                logging.error(e)
+                fail_obs = "Format ERROR: Both 'Thought' and 'Action' should be included in your reply."
+                continue
+            
+            # print(f"GPT-4v Response: {gpt_4v_res}\n--------")
+
+            bot_thought = re.split(pattern, gpt_4v_res)[1].strip()
+            chosen_action = re.split(pattern, gpt_4v_res)[2].strip()
+            
+            trajectory_info = f"Thought {bot_thought}\nAction {chosen_action}"
+            error_info = f"Error: {error_exist}\nExplanation: {EGA_explanation}"
                 
-                trajectory_info = f"Thought {bot_thought}\nAction {chosen_action}"
-                error_info = f"Error: {error_exist}\nExplanation: {EGA_explanation}"
-                    
-                if args.trajectory:
-                    current_history += trajectory_info
-                    if activate_EGA:
-                        current_history += error_info
-                    
-                print(f"Step {it}:\n{error_info}\n{trajectory_info}\n----")
-                    
-                # logging.info(gpt_4v_res)
-                action_key, info = extract_information(chosen_action)
+            if args.trajectory:
+                current_history += trajectory_info
+                if activate_EGA:
+                    current_history += error_info
+                
+            print(f"Step {it}:\n{error_info}\n{trajectory_info}\n----")
+                
+            # logging.info(gpt_4v_res)
+            action_key, info = extract_information(chosen_action)
 
-                fail_obs = ""
-                pdf_obs = ""
-                warn_obs = ""
-                # execute action
-                try:
-                    window_handle_task = driver_task.current_window_handle
-                    driver_task.switch_to.window(window_handle_task)
+            fail_obs = ""
+            pdf_obs = ""
+            warn_obs = ""
+            # execute action
+            try:
+                window_handle_task = driver_task.current_window_handle
+                driver_task.switch_to.window(window_handle_task)
 
-                    if action_key == 'click':
-                        if not args.text_only:
-                            click_ele_number = int(info[0])
-                            web_ele = web_eles[click_ele_number]
-                        else:
-                            click_ele_number = info[0]
-                            element_box = obs_info[click_ele_number]['union_bound']
-                            element_box_center = (element_box[0] + element_box[2] // 2,
-                                                element_box[1] + element_box[3] // 2)
-                            web_ele = driver_task.execute_script("return document.elementFromPoint(arguments[0], arguments[1]);", element_box_center[0], element_box_center[1])
+                if action_key == 'click':
+                    if not args.text_only:
+                        click_ele_number = int(info[0])
+                        web_ele = web_eles[click_ele_number]
+                    else:
+                        click_ele_number = info[0]
+                        element_box = obs_info[click_ele_number]['union_bound']
+                        element_box_center = (element_box[0] + element_box[2] // 2,
+                                            element_box[1] + element_box[3] // 2)
+                        web_ele = driver_task.execute_script("return document.elementFromPoint(arguments[0], arguments[1]);", element_box_center[0], element_box_center[1])
 
-                        ele_tag_name = web_ele.tag_name.lower()
-                        ele_type = web_ele.get_attribute("type")
+                    ele_tag_name = web_ele.tag_name.lower()
+                    ele_type = web_ele.get_attribute("type")
 
-                        exec_action_click(info, web_ele, driver_task)
+                    exec_action_click(info, web_ele, driver_task)
 
-                        # deal with PDF file
+                    # deal with PDF file
+                    current_files = sorted(os.listdir(args.download_dir))
+                    if current_files != download_files:
+                        # wait for download finish
+                        time.sleep(10)
                         current_files = sorted(os.listdir(args.download_dir))
-                        if current_files != download_files:
-                            # wait for download finish
-                            time.sleep(10)
-                            current_files = sorted(os.listdir(args.download_dir))
 
-                            current_download_file = [pdf_file for pdf_file in current_files if pdf_file not in download_files and pdf_file.endswith('.pdf')]
-                            if current_download_file:
-                                pdf_file = current_download_file[0]
-                                pdf_obs = get_pdf_retrieval_ans_from_assistant(client, os.path.join(args.download_dir, pdf_file), task['ques'])
-                                shutil.copy(os.path.join(args.download_dir, pdf_file), task_dir)
-                                pdf_obs = "You downloaded a PDF file, I ask the Assistant API to answer the task based on the PDF file and get the following response: " + pdf_obs
-                            download_files = current_files
+                        current_download_file = [pdf_file for pdf_file in current_files if pdf_file not in download_files and pdf_file.endswith('.pdf')]
+                        if current_download_file:
+                            pdf_file = current_download_file[0]
+                            pdf_obs = get_pdf_retrieval_ans_from_assistant(client, os.path.join(args.download_dir, pdf_file), task['ques'])
+                            shutil.copy(os.path.join(args.download_dir, pdf_file), task_dir)
+                            pdf_obs = "You downloaded a PDF file, I ask the Assistant API to answer the task based on the PDF file and get the following response: " + pdf_obs
+                        download_files = current_files
 
-                        if ele_tag_name == 'button' and ele_type == 'submit':
-                            time.sleep(10)
+                    if ele_tag_name == 'button' and ele_type == 'submit':
+                        time.sleep(10)
 
-                    elif action_key == 'wait':
+                elif action_key == 'wait':
+                    time.sleep(5)
+
+                elif action_key == 'type':
+                    if not args.text_only:
+                        type_ele_number = int(info['number'])
+                        web_ele = web_eles[type_ele_number]
+                    else:
+                        type_ele_number = info['number']
+                        element_box = obs_info[type_ele_number]['union_bound']
+                        element_box_center = (element_box[0] + element_box[2] // 2,
+                                            element_box[1] + element_box[3] // 2)
+                        web_ele = driver_task.execute_script("return document.elementFromPoint(arguments[0], arguments[1]);", element_box_center[0], element_box_center[1])
+
+                    warn_obs = exec_action_type(info, web_ele, driver_task)
+                    if 'wolfram' in task['web']:
                         time.sleep(5)
 
-                    elif action_key == 'type':
-                        if not args.text_only:
-                            type_ele_number = int(info['number'])
-                            web_ele = web_eles[type_ele_number]
-                        else:
-                            type_ele_number = info['number']
-                            element_box = obs_info[type_ele_number]['union_bound']
-                            element_box_center = (element_box[0] + element_box[2] // 2,
-                                                element_box[1] + element_box[3] // 2)
-                            web_ele = driver_task.execute_script("return document.elementFromPoint(arguments[0], arguments[1]);", element_box_center[0], element_box_center[1])
-
-                        warn_obs = exec_action_type(info, web_ele, driver_task)
-                        if 'wolfram' in task['web']:
-                            time.sleep(5)
-
-                    elif action_key == 'scroll':
-                        if not args.text_only:
-                            exec_action_scroll(info, web_eles, driver_task, args, None)
-                        else:
-                            exec_action_scroll(info, None, driver_task, args, obs_info)
-
-                    elif action_key == 'goback':
-                        driver_task.back()
-                        time.sleep(2)
-
-                    elif action_key == 'google':
-                        driver_task.get('https://www.google.com/')
-                        time.sleep(2)
-
-                    # 這個代表結束
-                    elif action_key == 'answer':
-                        logging.info(info['content'])
-                        logging.info('finish!!')
-                        missionCompleted=True
-                        break
-
+                elif action_key == 'scroll':
+                    if not args.text_only:
+                        exec_action_scroll(info, web_eles, driver_task, args, None)
                     else:
-                        raise NotImplementedError
-                    fail_obs = ""
-                except Exception as e:
-                    logging.error('driver error info:')
-                    logging.error(e)
-                    if 'element click intercepted' not in str(e):
-                        fail_obs = "The action you have chosen cannot be exected. Please double-check if you have selected the wrong Numerical Label or Action or Action format. Then provide the revised Thought and Action."
-                    else:
-                        fail_obs = ""
+                        exec_action_scroll(info, None, driver_task, args, obs_info)
+
+                elif action_key == 'goback':
+                    driver_task.back()
                     time.sleep(2)
 
-            logging.error(f'Error reflection iteration: {error_iter}')
+                elif action_key == 'google':
+                    driver_task.get('https://www.google.com/')
+                    time.sleep(2)
+
+                # 這個代表結束
+                elif action_key == 'answer':
+                    logging.info(info['content'])
+                    logging.info('finish!!')
+                    break
+
+                else:
+                    raise NotImplementedError
+                fail_obs = ""
+            except Exception as e:
+                logging.error('driver error info:')
+                logging.error(e)
+                if 'element click intercepted' not in str(e):
+                    fail_obs = "The action you have chosen cannot be exected. Please double-check if you have selected the wrong Numerical Label or Action or Action format. Then provide the revised Thought and Action."
+                else:
+                    fail_obs = ""
+                time.sleep(2)
+
 
         # print_message(messages, task_dir)
         driver_task.quit()
