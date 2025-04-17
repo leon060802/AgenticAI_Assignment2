@@ -24,12 +24,20 @@ Key Guidelines You MUST follow:
 3) Execute only one action per iteration. 
 4) STRICTLY Avoid repeating the same action if the webpage remains unchanged. You may have selected the wrong web element or numerical label. Continuous use of the Wait is also NOT allowed.
 5) When a complex Task involves multiple questions or steps, select "ANSWER" only at the very end, after addressing all of these questions (steps). Flexibly combine your own abilities with the information in the web page. Double check the formatting requirements in the task when ANSWER. 
+6) IMPORTANT: When using the Type action, ONLY include the actual text you want to type in the [Content] part. DO NOT include your thoughts, reasoning, or any other text. For example, if you need to type "Taipei" into a destination field, your action should be "Type [Numerical_Label]; Taipei" and NOT "Type [Numerical_Label]; I need to type Taipei as the destination".
 * Web Browsing Guidelines *
 1) Don't interact with useless web elements like Login, Sign-in, donation that appear in Webpages. Pay attention to Key Web Elements like search textbox and menu.
 2) Vsit video websites like YouTube is allowed BUT you can't play videos. Clicking to download PDF is allowed and will be analyzed by the Assistant API.
 3) Focus on the numerical labels in the TOP LEFT corner of each rectangle (element). Ensure you don't mix them up with other numbers (e.g. Calendar) on the page.
 4) Focus on the date in task, you must look for results that match the date. It may be necessary to find the correct year, month and day at calendar.
 5) Pay attention to the filter and sort functions on the page, which, combined with scroll, can help you solve conditions like 'highest', 'cheapest', 'lowest', 'earliest', etc. Try your best to find the answer that best fits the task.
+
+* Google Search Guidelines *
+1) IMPORTANT: When you type in a Google search box, the system automatically submits your search by pressing ENTER. DO NOT click the search button after typing - the search has already been submitted!
+2) After typing in a Google search box, wait for the search results to load before taking your next action.
+3) If you need to refine your search, type in the search box again with new terms - do not click the search button.
+4) When using Google, focus on the search results that appear after your search, not on the search box or buttons.
+5) If you're on a Google search results page and want to start a new search, look for the search box at the top of the page.
 
 Your reply should strictly follow the format:
 Thought: {Your brief thoughts (briefly summarize the info that will help ANSWER)}
@@ -64,11 +72,20 @@ Key Guidelines You MUST follow:
 3) Execute only one action per iteration. 
 4) STRICTLY Avoid repeating the same action if the webpage remains unchanged. You may have selected the wrong web element or numerical label. Continuous use of the Wait is also NOT allowed.
 5) When a complex Task involves multiple questions or steps, select "ANSWER" only at the very end, after addressing all of these questions (steps). Flexibly combine your own abilities with the information in the web page. Double check the formatting requirements in the task when ANSWER. 
+6) IMPORTANT: When using the Type action, ONLY include the actual text you want to type in the [Content] part. DO NOT include your thoughts, reasoning, or any other text. For example, if you need to type "Taipei" into a destination field, your action should be "Type [Numerical_Label]; Taipei" and NOT "Type [Numerical_Label]; I need to type Taipei as the destination".
 * Web Browsing Guidelines *
 1) Don't interact with useless web elements like Login, Sign-in, donation that appear in Webpages. Pay attention to Key Web Elements like search textbox and menu.
 2) Vsit video websites like YouTube is allowed BUT you can't play videos. Clicking to download PDF is allowed and will be analyzed by the Assistant API.
-3) Focus on the date in task, you must look for results that match the date. It may be necessary to find the correct year, month and day at calendar.
-4) Pay attention to the filter and sort functions on the page, which, combined with scroll, can help you solve conditions like 'highest', 'cheapest', 'lowest', 'earliest', etc. Try your best to find the answer that best fits the task.
+3) Focus on the numerical labels in the TOP LEFT corner of each rectangle (element). Ensure you don't mix them up with other numbers (e.g. Calendar) on the page.
+4) Focus on the date in task, you must look for results that match the date. It may be necessary to find the correct year, month and day at calendar.
+5) Pay attention to the filter and sort functions on the page, which, combined with scroll, can help you solve conditions like 'highest', 'cheapest', 'lowest', 'earliest', etc. Try your best to find the answer that best fits the task.
+
+* Google Search Guidelines *
+1) IMPORTANT: When you type in a Google search box, the system automatically submits your search by pressing ENTER. DO NOT click the search button after typing - the search has already been submitted!
+2) After typing in a Google search box, wait for the search results to load before taking your next action.
+3) If you need to refine your search, type in the search box again with new terms - do not click the search button.
+4) When using Google, focus on the search results that appear after your search, not on the search box or buttons.
+5) If you're on a Google search results page and want to start a new search, look for the search box at the top of the page.
 
 Your reply should strictly follow the format:
 Thought: {Your brief thoughts (briefly summarize the info that will help ANSWER)}

@@ -260,22 +260,40 @@ def clip_message_and_obs(msg, max_img_num):
     img_num = 0
     for idx in range(len(msg)):
         curr_msg = msg[len(msg) - 1 - idx]
-        if curr_msg['role'] != 'user':
-            clipped_msg = [curr_msg] + clipped_msg
-        else:
-            if type(curr_msg['content']) == str:
+        # Check if it's a list (Gemini format) or dict (OpenAI format)
+        if isinstance(curr_msg, dict) and 'role' in curr_msg:
+            # OpenAI format
+            if curr_msg['role'] != 'user':
                 clipped_msg = [curr_msg] + clipped_msg
-            elif img_num < max_img_num:
+            else:
+                if type(curr_msg['content']) == str:
+                    clipped_msg = [curr_msg] + clipped_msg
+                elif img_num < max_img_num:
+                    img_num += 1
+                    clipped_msg = [curr_msg] + clipped_msg
+                else:
+                    msg_no_pdf = curr_msg['content'][0]["text"].split("Observation:")[0].strip() + "Observation: A screenshot and some texts. (Omitted in context.)"
+                    msg_pdf = curr_msg['content'][0]["text"].split("Observation:")[0].strip() + "Observation: A screenshot, a PDF file and some texts. (Omitted in context.)"
+                    curr_msg_clip = {
+                        'role': curr_msg['role'],
+                        'content': msg_no_pdf if "You downloaded a PDF file" not in curr_msg['content'][0]["text"] else msg_pdf
+                    }
+                    clipped_msg = [curr_msg_clip] + clipped_msg
+        else:
+            # Gemini format (list of parts)
+            if img_num < max_img_num:
                 img_num += 1
                 clipped_msg = [curr_msg] + clipped_msg
             else:
-                msg_no_pdf = curr_msg['content'][0]["text"].split("Observation:")[0].strip() + "Observation: A screenshot and some texts. (Omitted in context.)"
-                msg_pdf = curr_msg['content'][0]["text"].split("Observation:")[0].strip() + "Observation: A screenshot, a PDF file and some texts. (Omitted in context.)"
-                curr_msg_clip = {
-                    'role': curr_msg['role'],
-                    'content': msg_no_pdf if "You downloaded a PDF file" not in curr_msg['content'][0]["text"] else msg_pdf
-                }
-                clipped_msg = [curr_msg_clip] + clipped_msg
+                # Create a simplified version without images
+                text_parts = [part for part in curr_msg if 'text' in part]
+                if text_parts:
+                    text_content = text_parts[0]['text']
+                    msg_no_pdf = text_content.split("Observation:")[0].strip() + "Observation: A screenshot and some texts. (Omitted in context.)"
+                    msg_pdf = text_content.split("Observation:")[0].strip() + "Observation: A screenshot, a PDF file and some texts. (Omitted in context.)"
+                    clipped_msg = [[{"text": msg_no_pdf if "You downloaded a PDF file" not in text_content else msg_pdf}]] + clipped_msg
+                else:
+                    clipped_msg = [curr_msg] + clipped_msg
     return clipped_msg
 
 
@@ -284,50 +302,79 @@ def clip_message_and_obs_text_only(msg, max_tree_num):
     tree_num = 0
     for idx in range(len(msg)):
         curr_msg = msg[len(msg) - 1 - idx]
-        if curr_msg['role'] != 'user':
-            clipped_msg = [curr_msg] + clipped_msg
+        # Check if it's a list (Gemini format) or dict (OpenAI format)
+        if isinstance(curr_msg, dict) and 'role' in curr_msg:
+            # OpenAI format
+            if curr_msg['role'] != 'user':
+                clipped_msg = [curr_msg] + clipped_msg
+            else:
+                if tree_num < max_tree_num:
+                    tree_num += 1
+                    clipped_msg = [curr_msg] + clipped_msg
+                else:
+                    msg_no_pdf = curr_msg['content'].split("Observation:")[0].strip() + "Observation: An accessibility tree. (Omitted in context.)"
+                    msg_pdf = curr_msg['content'].split("Observation:")[0].strip() + "Observation: An accessibility tree and a PDF file. (Omitted in context.)"
+                    curr_msg_clip = {
+                        'role': curr_msg['role'],
+                        'content': msg_no_pdf if "You downloaded a PDF file" not in curr_msg['content'] else msg_pdf
+                    }
+                    clipped_msg = [curr_msg_clip] + clipped_msg
         else:
+            # Gemini format (list of parts)
             if tree_num < max_tree_num:
                 tree_num += 1
                 clipped_msg = [curr_msg] + clipped_msg
             else:
-                msg_no_pdf = curr_msg['content'].split("Observation:")[0].strip() + "Observation: An accessibility tree. (Omitted in context.)"
-                msg_pdf = curr_msg['content'].split("Observation:")[0].strip() + "Observation: An accessibility tree and a PDF file. (Omitted in context.)"
-                curr_msg_clip = {
-                    'role': curr_msg['role'],
-                    'content': msg_no_pdf if "You downloaded a PDF file" not in curr_msg['content'] else msg_pdf
-                }
-                clipped_msg = [curr_msg_clip] + clipped_msg
+                # Create a simplified version
+                text_parts = [part for part in curr_msg if 'text' in part]
+                if text_parts:
+                    text_content = text_parts[0]['text']
+                    msg_no_pdf = text_content.split("Observation:")[0].strip() + "Observation: An accessibility tree. (Omitted in context.)"
+                    msg_pdf = text_content.split("Observation:")[0].strip() + "Observation: An accessibility tree and a PDF file. (Omitted in context.)"
+                    clipped_msg = [[{"text": msg_no_pdf if "You downloaded a PDF file" not in text_content else msg_pdf}]] + clipped_msg
+                else:
+                    clipped_msg = [curr_msg] + clipped_msg
     return clipped_msg
 
 
 def print_message(json_object, save_dir=None):
     remove_b64code_obj = []
     for obj in json_object:
-        if obj['role'] != 'user':
-            # print(obj)
-            logging.info(obj)
-            remove_b64code_obj.append(obj)
-        else:
-            if type(obj['content']) == str:
-                # print(obj)
+        # Check if it's a list (Gemini format) or dict (OpenAI format)
+        if isinstance(obj, dict) and 'role' in obj:
+            # OpenAI format
+            if obj['role'] != 'user':
                 logging.info(obj)
                 remove_b64code_obj.append(obj)
             else:
-                print_obj = {
-                    'role': obj['role'],
-                    'content': obj['content']
-                }
-                for item in print_obj['content']:
-                    if item['type'] == 'image_url':
-                        item['image_url'] =  {"url": "data:image/png;base64,{b64_img}"}
-                # print(print_obj)
-                logging.info(print_obj)
-                remove_b64code_obj.append(print_obj)
+                if type(obj['content']) == str:
+                    logging.info(obj)
+                    remove_b64code_obj.append(obj)
+                else:
+                    print_obj = {
+                        'role': obj['role'],
+                        'content': obj['content']
+                    }
+                    for item in print_obj['content']:
+                        if item['type'] == 'image_url':
+                            item['image_url'] = {"url": "data:image/png;base64,{b64_img}"}
+                    logging.info(print_obj)
+                    remove_b64code_obj.append(print_obj)
+        else:
+            # Gemini format (list of parts)
+            # Create a simplified version for logging
+            simplified_obj = []
+            for part in obj:
+                if 'text' in part:
+                    simplified_obj.append({"text": part['text']})
+                elif 'inline_data' in part:
+                    simplified_obj.append({"inline_data": "data:image/png;base64,{b64_img}"})
+            logging.info(simplified_obj)
+            remove_b64code_obj.append(simplified_obj)
+            
     if save_dir:
         with open(os.path.join(save_dir, 'interact_messages.json'), 'w', encoding='utf-8') as fw:
             json.dump(remove_b64code_obj, fw, indent=2)
-    # return remove_b64code_obj
 
 
 def get_webarena_accessibility_tree(browser, save_file=None):
@@ -359,47 +406,26 @@ def compare_images(img1_path, img2_path):
     return total_difference
 
 
-def get_pdf_retrieval_ans_from_assistant(client, pdf_path, task):
-    # print("You download a PDF file that will be retrieved using the Assistant API.")
-    logging.info("You download a PDF file that will be retrieved using the Assistant API.")
-    file = client.files.create(
-        file=open(pdf_path, "rb"),
-        purpose='assistants'
-    )
-    # print("Create assistant...")
-    logging.info("Create assistant...")
-    assistant = client.beta.assistants.create(
-        instructions="You are a helpful assistant that can analyze the content of a PDF file and give an answer that matches the given task, or retrieve relevant content that matches the task.",
-        model="gpt-4-1106-preview",
-        tools=[{"type": "retrieval"}],
-        file_ids=[file.id]
-    )
-    thread = client.beta.threads.create()
-    message = client.beta.threads.messages.create(
-        thread_id=thread.id,
-        role="user",
-        content=task,
-        file_ids=[file.id]
-    )
-    run = client.beta.threads.runs.create(
-        thread_id=thread.id,
-        assistant_id=assistant.id
-    )
-    while True:
-        # Retrieve the run status
-        run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
-        if run_status.status == 'completed':
-            break
-        time.sleep(2)
-    messages = client.beta.threads.messages.list(thread_id=thread.id)
-    messages_text = messages.data[0].content[0].text.value
-    file_deletion_status = client.beta.assistants.files.delete(
-        assistant_id=assistant.id,
-        file_id=file.id
-    )
-    # print(file_deletion_status)
-    logging.info(file_deletion_status)
-    assistant_deletion_status = client.beta.assistants.delete(assistant.id)
-    # print(assistant_deletion_status)
-    logging.info(assistant_deletion_status)
-    return messages_text
+def get_pdf_retrieval_ans_from_assistant(model, pdf_path, question):
+    """
+    Get answer from assistant based on PDF content
+    """
+    try:
+        # Read PDF content
+        import PyPDF2
+        pdf_reader = PyPDF2.PdfReader(pdf_path)
+        pdf_text = ""
+        for page in pdf_reader.pages:
+            pdf_text += page.extract_text()
+        
+        # Format message for Gemini API
+        messages = [
+            {"text": f"I have a PDF file with the following content:\n\n{pdf_text}\n\nBased on this PDF content, please answer the following question: {question}"}
+        ]
+        
+        # Call Gemini API
+        response = model.generate_content(messages)
+        return response.text
+    except Exception as e:
+        logging.error(f"Error processing PDF: {str(e)}")
+        return f"Error processing PDF: {str(e)}"
